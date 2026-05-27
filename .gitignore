@@ -1,0 +1,10 @@
+# Ignore dataset
+data/
+
+# Ignore images
+code/images/
+
+# Ignore latex build files
+report/*
+!report/*.tex
+!report/*.bib
