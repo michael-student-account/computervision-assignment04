@@ -1,0 +1,19 @@
+{
+    "triplet_loss": [
+        0.13642101099051662,
+        0.1332547557556023,
+        0.13117753894273507,
+        0.13059917883473937,
+        0.12852075300731902
+    ],
+    "hyperparameters": {
+        "margin": 0.3,
+        "weight_decay": 0.0001,
+        "num_epochs": 5,
+        "P": 8,
+        "K": 4,
+        "embedding_dim": 256,
+        "learning_rate": 0.001,
+        "image_resolution": 128
+    }
+}

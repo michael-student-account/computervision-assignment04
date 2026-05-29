@@ -5,47 +5,29 @@ from datetime import datetime
 from pathlib import Path
 import json
 from tqdm.auto import tqdm
+from utils import semi_hard_triplet_loss
 
-def train_embedding_model(model, dataloader, optimizer, loss_function, device):
+def train_embedding_model(model, dataloader, optimizer, device, margin=0.3):
     """
-    This function trains the embedding model for one epoch using triplet loss.
+    This function trains the embedding model for one epoch.
     """
     model.train()
 
     total_loss = 0.0
-    total_triplets = 0
+    total_images = 0
 
     progress_bar = tqdm(dataloader, desc="Training", leave=True)
 
     for batch in progress_bar:
-        batch_size = batch['image'].shape[0]
-
-        # Extract anchor, positive, and negative images from the dataloader
-        anchor_image = batch['image'].to(device)  # [batch_size, 3, 256, 256]
-        positive_image = batch['pos_anchor'].to(device)
-        negative_image = batch['neg_anchor'].to(device)
-
-        # Concatenate anchor, positive, and negative images along the batch dimension
-        # [3*batch_size, 3, 256, 256]
-        all_images = torch.cat(
-            [anchor_image, positive_image, negative_image], 
-            dim=0
-        )
+        images = batch["image"].to(device)
+        labels = batch["vehicle_id"].to(device) 
+        batch_size = images.shape[0]
 
         # Forward pass with all embeddings
-        all_embeddings = model(all_images)  # [3*batch_size, embedding_dim]
-
-        # Split the embeddings back into anchor, positive, and negative
-        anchor_embedding, positive_embedding, negative_embedding = torch.chunk(
-            all_embeddings, 
-            chunks=3,
-            dim=0
-        )
+        embeddings = model(images)
 
         # Triplet loss function
-        loss = loss_function(
-            anchor_embedding, positive_embedding, negative_embedding
-        )
+        loss = semi_hard_triplet_loss(embeddings, labels, margin=margin)
 
         # Backpropagation and optimization
         optimizer.zero_grad()
@@ -53,9 +35,9 @@ def train_embedding_model(model, dataloader, optimizer, loss_function, device):
         optimizer.step()
 
         total_loss += loss.item() * batch_size
-        total_triplets += batch_size
+        total_images += batch_size
 
-        running_avg_loss = total_loss / total_triplets
+        running_avg_loss = total_loss / total_images
 
         progress_bar.set_postfix({
             "batch_loss": f"{loss.item():.4f}",
@@ -63,7 +45,7 @@ def train_embedding_model(model, dataloader, optimizer, loss_function, device):
         })
     
     # Average loss over the epoch
-    average_loss = total_loss / total_triplets
+    average_loss = total_loss / total_images
 
     return average_loss
 
@@ -75,10 +57,11 @@ def main():
     alpha = 0.3
     learning_rate = 1e-3
     weight_decay = 1e-4
-    num_epochs = 100
+    num_epochs = 50
     embedding_dim = 256
-    batch_size = 8
-    image_resolution = 64
+    P = 8
+    K = 4
+    image_resolution = 128
 
     # Initialize directory to save outputs
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -93,9 +76,10 @@ def main():
         'triplet_loss': [],
         'hyperparameters': {
             'margin': alpha,
-            'weight_dacay': weight_decay,
+            'weight_decay': weight_decay,
             'num_epochs': num_epochs,
-            'batch_size': batch_size,
+            'P': P,
+            'K': K,
             'embedding_dim': embedding_dim,
             'learning_rate': learning_rate,
             'image_resolution': image_resolution
@@ -110,16 +94,11 @@ def main():
         model.parameters(), lr=learning_rate, weight_decay=weight_decay
     )
 
-    # Loss function: p = use L2 euclidean distance
-    loss_function = torch.nn.TripletMarginLoss(margin=alpha, p=2)
-
     # Dataloaders
     print("Loading data...")
     base_directory = Path(__file__).resolve().parent  # starting point is the code directory
     data_directory = base_directory.parent / 'data' / 'VeRi'
-    train_loader, _, _ = create_dataloaders(
-        data_directory, image_resolution, batch_size=batch_size
-    )
+    train_loader, _, _ = create_dataloaders(data_directory, image_resolution, P=P, K=K)
     print("Data loaded successfully.")
 
     for epoch in range(num_epochs):
@@ -129,7 +108,7 @@ def main():
         print(f"Epoch {epoch+1}/{num_epochs}")
 
         avg_loss = train_embedding_model(
-            model, train_loader, optimizer, loss_function, device
+            model, train_loader, optimizer, device, margin=alpha
         )
         training_history['triplet_loss'].append(avg_loss)
 
