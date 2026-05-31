@@ -50,13 +50,13 @@
 
 % The \icmltitle you define below is probably too long as a header.
 % Therefore, a short form for the running title is supplied here:
-\icmltitlerunning{CV842 - ASSIGNMENT 03}
+\icmltitlerunning{CV842 - ASSIGNMENT 04}
 
 \begin{document}
 
 \onecolumn
 
-\icmltitle{Computer Vision 2026: Assignment 03}
+\icmltitle{Computer Vision 2026: Assignment 04}
 
 \begin{icmlauthorlist}
 \icmlauthor{Michael Bezuidenhout}{yyy}
@@ -66,9 +66,38 @@
 
 \subsection{Approach}
 
+A small image retrieval system was trained on the 
+VeRi dataset \cite{XinchenLiu16a} for vehicle re-
+identification. The aim was to train a model that is capable of 
+producing an embedding space where images of similar vehicles are clustered 
+relatively close to each other (and relatively far away from images of notably 
+different vehicles). During evaluation, query and gallery images are embedded 
+and each query image is matched to gallery images in order of proximity within 
+the embedding space. A capable model should be able to rank gallery images of 
+the particular vehicle above vehicles of similar colour and shape (not to 
+mention vehicles that are completely different).
+
+\subsection{Model Architecture}
+
+\subsection{Triplet Mining Strategy}
+
 \subsection{Dataset}
 
+\subsection{Training}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{images/alpha02-losscurve.pdf}
+    \caption{Semi-hard triplet loss curve for training with $\alpha = 0.2$.}
+\end{figure}
+
 \subsection{Results and Discussion}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{images/alpha02-rankings.pdf}
+    \caption{Semi-hard triplet loss curve for training with $\alpha = 0.2$.}
+\end{figure}
 
 \subsection{Recommendations}
 
