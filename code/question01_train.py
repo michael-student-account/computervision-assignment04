@@ -54,7 +54,7 @@ def main():
     Execute training and evaluation.
     """
     # HYPERPARAMETERS
-    alpha = 0.3
+    alpha = 0.2
     learning_rate = 1e-3
     weight_decay = 1e-4
     num_epochs = 50

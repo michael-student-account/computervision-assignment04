@@ -11,7 +11,7 @@ def semi_hard_triplet_loss(embeddings, labels, margin=0.3):
     # Pre-calculate pairwise distances between embeddings to save compute
     distances = torch.cdist(embeddings, embeddings, p=2)
 
-    batch_size = embeddings.size(0)
+    batch_size = embeddings.shape[0]
     losses = []
 
     # Iterate over all images in the batch, each serving as an anchor
@@ -20,12 +20,12 @@ def semi_hard_triplet_loss(embeddings, labels, margin=0.3):
 
         # Positive mask: same ID, but not the anchor itself
         positive_mask = labels == anchor_label
-        positive_mask[anchor_idx] = False
+        positive_mask[anchor_idx] = False  # Manually adjust
 
         # Negative mask: different ID
         negative_mask = labels != anchor_label
 
-        positive_indices = torch.where(positive_mask)[0]
+        positive_indices = torch.where(positive_mask)[0]  # Return idx, not booleans
         negative_indices = torch.where(negative_mask)[0]
 
         # Skip if no valid positive or negative
@@ -33,11 +33,11 @@ def semi_hard_triplet_loss(embeddings, labels, margin=0.3):
             continue
 
         for positive_idx in positive_indices:
-            d_ap = distances[anchor_idx, positive_idx]
+            d_ap = distances[anchor_idx, positive_idx]  # positive distance
 
             negative_distances = distances[anchor_idx, negative_indices]
 
-            # Semi-hard condition:
+            # Semi-hard condition: filter extreme negatives out for relevant training
             # d_ap < d_an < d_ap + margin
             semi_hard_mask = (
                 (negative_distances > d_ap) &
