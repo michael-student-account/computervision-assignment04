@@ -64,47 +64,252 @@
 
 \section{Image Retrieval for Image Re-Identification}
 
-\subsection{Approach}
 
-A small image retrieval system was trained on the 
-VeRi dataset \cite{XinchenLiu16a} for vehicle re-
-identification. The aim was to train a model that is capable of 
-producing an embedding space where images of similar vehicles are clustered 
-relatively close to each other (and relatively far away from images of notably 
-different vehicles). During evaluation, query and gallery images are embedded 
-and each query image is matched to gallery images in order of proximity within 
+\subsection{Problem Statement and Approach}
+
+A small image embedding model was trained on the 
+VeRi dataset \cite{XinchenLiu16a} for use in a vehicle re-
+identification system. The aim was to train a model that is capable of 
+producing an embedding space where images of the same vehicle are clustered 
+relatively close to each other, while images of different vehicles are pushed 
+farther apart. During evaluation, query and gallery images are converted 
+to embedded feature vectors 
+and each query is matched to gallery images in order of proximity within 
 the embedding space. A capable model should be able to rank gallery images of 
 the particular vehicle above vehicles of similar colour and shape (not to 
 mention vehicles that are completely different).
 
+\subsection{Dataset}
+
+The VeRi dataset \cite{XinchenLiu16a} is a large-scale dataset for vehicle 
+re-identification and was used with permission for this assignment. The dataset 
+contains over 50 000 images of 776 vehicles captured by 20 cameras in a 
+real-world traffic setting and is split into training, query, and test (gallery) sets. The 
+re-identification task is to match query images to gallery images based on the 
+vehicle ID using an embedding model that is trained on the training set.
+
+Also included in the dataset are detailed annotations for each image, including 
+the vehicle ID, camera ID, and bounding box coordinates. For this assignment, 
+only the vehicle ID and images were used for training and evaluation. Image 
+labels were extracted directly from the file name. 
+
+Image preprocessing consisted of resizing all images to a fixed resolution of 
+128 $\times$ 128 pixels, converting the images to PyTorch tensors, and 
+normalizing to the mean and standard deviation of the ImageNet dataset to match 
+the pre-trained ResNet backbone. Constraining the image resolution was a 
+necessary compromise to keep the training requirement within reasonable limits 
+for the scope of this assignment. It is recommended that higher image resolutions
+are investigated in future work.
+
 \subsection{Model Architecture}
+
+The model architecture can be compartmentalised into two functional components: 
+the backbone for feature extraction and the embedding head for producing the 
+final feature space embedding. 
+
+The backbone is comprised of a pre-trained ResNet-34 \cite{He15} model with the final 
+fully connected classification layer removed since only the feature extraction 
+capabilities are needed. This leaves only the residual convolutional blocks of 
+the ResNet model. After global average pooling, the output from the convolutional 
+feature extractor is a 512-dimensional feature vector.  
+
+The ResNet backbone was initialized with pre-trained weights from training 
+on the ImageNet dataset. The weights were frozen during training on the 
+VeRi dataset to save compute. 
+
+The embedding head is a simple feedforward network with a single hidden layer 
+of 256 units and SiLU activation, followed by a final output layer of 256 units. 
+The final output is not passed through an activation function but is instead 
+L2-normalized to produce the final embedding. The benefit of normalization is that the 
+embedding space and vector comparison is not influenced by the magnitude of 
+feature vectors, thereby stabilizing the comparison and improving consistency.
+
+The decision to use ResNet34 as a backbone was ultimately made as a compromise 
+between the computational resources and model capacity. A deeper ResNet model 
+would likely produce better results but the resource requirement proved too 
+significant for the scope of this assignment. It is recommended that a deeper 
+architecture and higher image resolution is investigated in future work to 
+potentially improve performance.
 
 \subsection{Triplet Mining Strategy}
 
-\subsection{Dataset}
+The model was trained using a triplet mining strategy with semi-hard negatives. 
+A triplet consists of an anchor image (a), a positive image (p) and a negative 
+image (n). The positive image is of the same class (vehicle ID) as the anchor, 
+while the negative is of a different class. The aim is to train the model such 
+that the distance between the anchor and positive is less than the distance 
+between the anchor and negative by at least a margin $\alpha$. 
+
+Mini-batches were constructed for training by using a P $\times$ K strategy, 
+where P is the number of classes (vehicle IDs) and K is the number of images 
+per class \cite{Brink26}. A batch size of 32 was used with P = 8 and K = 4 in an 
+attempt to balance computational requirements and triplet diversity.
+
+Semi-hard negative mining was then implemented within each batch. Semi-hard 
+negatives are those that are farther from the anchor than the positive but still
+within the margin $\alpha$: 
+
+$$
+    D_{ap} < D_{an} < D_{ap} + \alpha
+$$
+
+This strategy is valuable because it moderates the difficulty of training 
+examples. Negative samples which are already located far from the anchor are not
+as valuable for learning as those which are closer to the anchor and thus 
+more likely to be confused with the positive. It is also a practical 
+consideration since compute is not wasted on extreme negatives which are 
+unlikely to be informative for training. 
+
+Since the model outputs L2-normalized embeddings, the maximum Euclidean distance 
+between two points in the embedding space is 2. This effectively also constrains
+the margin $\alpha$ to a sensibly smaller value within this range. Since the 
+optimal margin is not known, values of $\alpha$ between 0.2 and 0.5 were 
+investigated.
+
+Random triplet sampling was also investigated but proved to be less effective 
+than semi-hard negative sampling with the P $\times$ K batch construction while 
+also slowing training due to the need to mine for triplets across the entire 
+dataset. 
 
 \subsection{Training}
 
-\begin{figure}[H]
+After a broad initial investigation, the final set of models were trained using 
+the $PK$ batch sampling strategy with semi-hard negative mining and varied margins 
+$\alpha$ of 0.2 to 0.5. The mini-batch size was 32 ($P=8, K=4$) to balance 
+resource requirements and triplet diversity. The AdamW optimizer was used with 
+a learning rate of 1e-3 and a weight decay of 1e-4. Model configurations were 
+trained for 50 epochs each.
+
+Triplet loss was calculated using a hinge component to ensure that only triplets 
+which violate the margin contribute to the loss. The loss for a single triplet is 
+calculated as follows: 
+
+\begin{equation}
+    L = \max(0, D_{ap} - D_{an} + \alpha)
+\end{equation}
+
+where $\alpha$ is the margin and $D_{ap}$ and $D_{an}$ are the Euclidean distances 
+between the anchor and positive, and anchor and negative respectively. The 
+total loss for an epoch is averaged across all triplets.
+
+Figure \ref{fig:alpha02-loss} and Figure \ref{fig:alpha05-loss} show the triplet 
+loss curve for training with $\alpha = 0.2$ and $\alpha = 0.5$. The loss curves 
+decrease sharply in the early epochs before trending toward a plateau. The loss 
+curve in Figure \ref{fig:alpha02-loss} appears to be more unstable than the curve in 
+Figure \ref{fig:alpha05-loss}, which may be due to the smaller margin resulting 
+in fewer triplets that meet the semi-hard negative criteria and thus more 
+variability in the average loss. Potential improvements to this might have been 
+to decrease the learning rate for the smaller margin to stabilize training, or 
+to increase the batch sampling size to increase the number of triplets that 
+meet the semi-hard negative criteria.
+
+\begin{figure}
     \centering
-    \includegraphics[width=0.5\textwidth]{images/alpha02-losscurve.pdf}
-    \caption{Semi-hard triplet loss curve for training with $\alpha = 0.2$.}
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/alpha02-losscurve.pdf}
+        \caption{}
+        \label{fig:alpha02-loss}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/alpha05-losscurve.pdf}
+        \caption{}
+        \label{fig:alpha05-loss}
+    \end{subfigure}
+    \caption{Training loss curves for models trained with (a) $\alpha = 0.2$ 
+    and (b) $\alpha = 0.5$.}
+    \label{fig:loss-curves-combined}
 \end{figure}
 
 \subsection{Results and Discussion}
 
-\begin{figure}[H]
+Table \ref{tab:margin-comparison} shows the retrieval performance of the 
+trained models for different margin values $\alpha$. The model trained 
+with $\alpha = 0.2$ achieved the best performance across all metrics, 
+with a Top-1 accuracy of 0.9774, Top-5 accuracy of 0.9923, and mAP of 0.1861. 
+As the margin increased, performance generally decreased, with the model 
+trained with $\alpha = 0.5$ achieving the lowest performance with a Top-1 
+accuracy of 0.8892, Top-5 accuracy of 0.9565, and mAP of 0.1509. This 
+suggests that a smaller margin is more effective for the task of image 
+re-identification in this context, likely because it allows for more informative
+triplets to contribute to the loss during training. 
+
+\begin{table}[H]
     \centering
-    \includegraphics[width=0.75\textwidth]{images/alpha02-rankings.pdf}
-    \caption{Semi-hard triplet loss curve for training with $\alpha = 0.2$.}
+    \caption{Retrieval performance for different triplet loss margin values.}
+    \label{tab:margin-comparison}
+    \begin{tabular}{c c c c}
+        \hline
+        Margin $\alpha$ & Top-1 Accuracy & Top-5 Accuracy & mAP \\
+        \hline
+        0.2 & 0.9774 & 0.9923 & 0.1861 \\
+        0.3 & 0.9487 & 0.9821 & 0.1771 \\
+        0.4 & 0.9231 & 0.9744 & 0.1636 \\
+        0.5 & 0.8892 & 0.9565 & 0.1509 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+Figure \ref{fig:alpha02-rankings} shows the top 5 gallery images retrieved for 
+selected queries using the model trained with $\alpha = 0.2$. In all examples, 
+the top-ranked gallery image is a correct match (same vehicle ID as the query), 
+which is reflective of the high Top-1 accuracy reported in Table \ref{tab:margin-comparison}. 
+In some cases, the lower ranked images are of an incorrect vehicle ID but with 
+similar shape and colour. At first glance, these mismatches look fairly similar 
+to the query image, only differing in some minor details like window stickers. 
+This suggests that the model is learning a reasonably effective embedding space 
+where similar vehicles are clustered together, even if they are not the same vehicle ID.
+
+A deeper convolutional network and higher image resolution may have allowed 
+the model to learn a more detailed embedding space, which in turn may have improved 
+the model's ability to distinguish between similar vehicles. 
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/alpha02-rankings.pdf}
+    \caption{Top 5 gallery images retrieved for selected query images using 
+    embeddings produced by the $\alpha$ = 0.2 model. Green boxes indicate 
+    correct matches (same vehicle ID) and red boxes indicate incorrect matches.}
+    \label{fig:alpha02-rankings}
 \end{figure}
 
+An observation from Figure \ref{fig:alpha02-rankings} is that the top-ranked 
+gallery image looks nearly identical to the query image. This is not ideal 
+because matching near-duplicate images is not representative of the requirements
+of a real-world re-identification system. The retrieval metrics in Table 
+\ref{tab:margin-comparison} are likely inflated by the presence of near-duplicate
+images and cast doubt on the model's ability to replicate the performance in a 
+real-world setting. 
+
+An improvement to this shortcoming may be to exclude images from the same camera 
+as the query image from the gallery during evaluation. This would reduce the 
+likelihood of near-duplicate images appearing in the gallery because 
+images from different cameras are more likely to have different angles, 
+lighting conditions, and other variations that make the re-identification task 
+more realistic. 
+
 \subsection{Recommendations}
+
+While the trained models in this assignment served as a good proof-of-concept 
+for the use of triplet loss and semi-hard negative mining for image 
+re-identification, there are several avenues for improvement that could be 
+explored in future work. 
+
+Perhaps most notably, future work should focus on implementing a more realistic evaluation protocol. 
+This may involve excluding near-duplicate images from the gallery during evaluation. 
+Further improvements might include investigating different image resolutions, 
+triplet mining strategies, and feature space embeddings. As a final recommendation, 
+extended training time should be investigated to allow the model to converge 
+fully with early stopping to prevent overfitting.
 
 \nocite{XinchenLiu16}
 \nocite{XinchenLiu16a}
 \nocite{XinchenLiu18}
 \nocite{He15}
+\nocite{elgendy2020deep}
+\nocite{torralba2024foundations}
 
 \bibliography{main}
 \bibliographystyle{icml2025}

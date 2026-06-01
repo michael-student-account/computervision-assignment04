@@ -8,3 +8,6 @@ code/images/
 report/*
 !report/*.tex
 !report/*.bib
+
+# Ignore zip folders
+*.zip
