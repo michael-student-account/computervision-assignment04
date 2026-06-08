@@ -11,3 +11,7 @@ report/*
 
 # Ignore zip folders
 *.zip
+
+# Ignore everything in submission folder except for the report
+submission/*
+!submission/*.pdf
